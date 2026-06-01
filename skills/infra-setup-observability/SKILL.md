@@ -45,6 +45,16 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+**`src/main/resources/application-dev.yml`**:
+```yaml
+loki:
+  url: http://localhost:3100/loki/api/v1/push
+
+management:
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
 ```
 
 **`src/main/resources/logback-spring.xml`**:
@@ -91,8 +101,8 @@ You MUST configure the Loki appender as follows:
 Update `k8s/observability/Chart.yaml` dependencies:
 ```yaml
 dependencies:
-  - name: kube-prometheus-stack
-    version: 85.2.0
+  - name: prometheus
+    version: 29.8.0
     repository: https://prometheus-community.github.io/helm-charts
   - name: loki
     version: 16.1.0
@@ -108,26 +118,25 @@ dependencies:
 **Local Configuration (`k8s/observability/values-local.yaml`):**
 ```yaml
 # Local scaling for Kind cluster
-kube-prometheus-stack:
-  prometheus:
-    prometheusSpec:
-      storageSpec:
-        volumeClaimTemplate:
-          spec:
-            resources:
-              requests:
-                storage: 1Gi
-      resources:
-        limits: { cpu: 1000m, memory: 1Gi }
-        requests: { cpu: 500m, memory: 256Mi }
+prometheus:
+  server:
+    persistentVolume:
+      size: 2Gi
+    resources:
+      limits: { cpu: 500m, memory: 512Mi }
+      requests: { cpu: 250m, memory: 512Mi }
 
 grafana:
-  persistence: { size: 512Mi }
+  initChownData: { enabled: false }
+  persistence: { size: 1Gi }
   resources:
     limits: { cpu: 500m, memory: 256Mi }
     requests: { cpu: 200m, memory: 128Mi }
 
 loki:
+  loki:
+    server:
+      http_server_write_timeout: 1m
   singleBinary:
     persistence: { size: 2Gi }
     resources:
@@ -145,35 +154,28 @@ tempo:
 **Production Configuration (`k8s/observability/values-prod.yaml`):**
 ```yaml
 # GKE Production Profile
-kube-prometheus-stack:
-  prometheus:
-    prometheusSpec:
-      storageSpec:
-        volumeClaimTemplate:
-          spec:
-            storageClassName: "premium-rwo"
-            resources:
-              requests: { storage: 5Gi }
-      resources:
-        limits: { cpu: 500m, memory: 2Gi }
-        requests: { cpu: 250m, memory: 1Gi }
+prometheus:
+  server:
+    persistentVolume:
+      storageClass: "premium-rwo"
+      size: 10Gi
 
 grafana:
   persistence:
     storageClassName: "premium-rwo"
-    size: 1Gi
+    size: 5Gi
 
 loki:
   singleBinary:
     persistence:
       storageClass: "premium-rwo"
-      size: 5Gi
+      size: 10Gi
 
 tempo:
   tempo:
     persistence:
       storageClass: "premium-rwo"
-      size: 5Gi
+      size: 10Gi
 ```
 
 **Deployment / Release:**
