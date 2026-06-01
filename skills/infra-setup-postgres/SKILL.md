@@ -32,6 +32,10 @@ Update the following properties:
 **`src/main/resources/application.yml`**:
 ```yaml
 spring:
+  docker:
+    compose:
+      enabled: true
+      lifecycle-management: start_only
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -57,7 +61,22 @@ spring:
     password: ${DB_PASSWORD}
 ```
 
-### 3. Kubernetes (Helm) & Release
+### 3. Flyway Configuration (Maven)
+Update `pom.xml` to include the Flyway plugin for local development:
+```xml
+<plugin>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-maven-plugin</artifactId>
+    <configuration>
+        <url>jdbc:postgresql://localhost:5432/chatapp</url>
+        <user>root</user>
+        <password>root</password>
+        <cleanDisabled>false</cleanDisabled>
+    </configuration>
+</plugin>
+```
+
+### 4. Kubernetes (Helm) & Release
 Update `k8s/infra/Chart.yaml` dependencies:
 ```yaml
 dependencies:
@@ -99,4 +118,9 @@ postgresql:
 ## Advanced features
 
 - **Migrations:** Use Flyway. Place SQL files in `src/main/resources/db/migration/`.
+  - Use `V<Number>__<Description>.sql` for versioned migrations.
+  - Use `V<Number>__seed_<Table>.sql` for initial data seeding.
 - **Indexing:** Follow naming conventions like `idx_<table_name>_<column_name>`.
+  - Always verify execution plans with `EXPLAIN ANALYZE` for complex queries.
+- **Performance:** For high-throughput tables, consider using `BRIN` indexes or partitioning if the table grows beyond 100M rows.
+- **Data Integrity:** Use check constraints and foreign keys to enforce business rules at the database level.

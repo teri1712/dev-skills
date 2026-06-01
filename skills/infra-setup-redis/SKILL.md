@@ -97,5 +97,15 @@ redis:
 
 ## Advanced features
 
-- **Redis Stack:** Includes RedisInsight on port 8001 in Compose.
-- **Persistence:** Enabled by default in K8s via master persistence.
+- **Redis Stack:** Includes RedisInsight on port 8001 in Compose. Useful for visual debugging of data structures.
+- **Persistence:** Enabled by default in K8s via master persistence. Scale down to `persistence.enabled: false` for local Kind testing to save resources.
+- **Testing (Testcontainers):** Use the following dependency for integration tests:
+```xml
+<dependency>
+    <groupId>com.redis</groupId>
+    <artifactId>testcontainers-redis</artifactId>
+    <version>2.2.2</version>
+    <scope>test</scope>
+</dependency>
+```
+- **Performance:** Lettuce is used as the default non-blocking client. Connection pooling can be configured if high concurrency is required.
