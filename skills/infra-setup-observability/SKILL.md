@@ -7,21 +7,55 @@ description: Set up Observability (Prometheus, Grafana, Loki, Tempo) for the pro
 
 ## Quick start
 
-### 1. Update `compose.yaml`
+### 1. Create Configuration Files
+Create `compose/prometheus.yml`:
+```yaml
+global:
+  scrape_interval: 10s
+
+scrape_configs:
+  - job_name: "spring-boot-app"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: [ "host.docker.internal:8081" ]
+```
+
+Create `compose/tempo.yml`:
+```yaml
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+        http:
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+```
+
+### 2. Update `compose.yaml`
 Add observability services:
 ```yaml
 services:
   prometheus:
     image: prom/prometheus:v2.51.0
     ports: ["9090:9090"]
-    volumes: ["./prometheus.yml:/etc/prometheus/prometheus.yml"]
+    volumes: ["./compose/prometheus.yml:/etc/prometheus/prometheus.yml"]
   loki:
     image: grafana/loki:3.0.0
     ports: ["3100:3100"]
   tempo:
     image: grafana/tempo:2.5.0
     ports: ["3200:3200", "4317:4317", "4318:4318"]
-    volumes: ["./tempo.yml:/etc/tempo.yaml"]
+    volumes: ["./compose/tempo.yml:/etc/tempo.yaml"]
   grafana:
     image: grafana/grafana:11.0.0
     ports: ["3000:3000"]
@@ -31,7 +65,7 @@ services:
     depends_on: [prometheus, loki, tempo]
 ```
 
-### 2. Spring Boot Binding & Logback (Mandatory)
+### 3. Spring Boot Binding & Logback (Mandatory)
 
 **`src/main/resources/application.yml`**:
 ```yaml
@@ -97,7 +131,7 @@ You MUST configure the Loki appender as follows:
 </configuration>
 ```
 
-### 3. Kubernetes (Helm) & Release
+### 4. Kubernetes (Helm) & Release
 Update `k8s/observability/Chart.yaml` dependencies:
 ```yaml
 dependencies:
