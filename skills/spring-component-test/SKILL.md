@@ -53,7 +53,7 @@ public class DatasetTestExecutionListener extends AbstractTestExecutionListener 
     }
 
     private List<TestDataset> getDatasets(TestContext testContext) {
-        ComponentTest annotation = MergedAnnotations.from(testContext.getTestClass())
+        ComponentTest annotation = MergedAnnotations.from(testContext.getTestClass(), MergedAnnotations.SearchStrategy.TYPE_HIERARCHY)
             .get(ComponentTest.class).synthesize();
         ApplicationContext context = testContext.getApplicationContext();
         return Arrays.stream(annotation.datasets())
