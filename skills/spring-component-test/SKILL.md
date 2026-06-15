@@ -57,7 +57,7 @@ public class DatasetTestExecutionListener extends AbstractTestExecutionListener 
             .get(ComponentTest.class).synthesize();
         ApplicationContext context = testContext.getApplicationContext();
         return Arrays.stream(annotation.datasets())
-            .map(context::getBean).toList();
+            .map(clazz -> (TestDataset) context.getBean(clazz)).toList();
     }
 }
 ```
