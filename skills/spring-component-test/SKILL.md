@@ -72,6 +72,9 @@ Meta-annotation to bundle everything together.
 @ActiveProfiles("test")
 @Import({Containers.class, DatasetImportSelector.class})
 @AutoConfigureMockMvc
+@EnableScenarios
+@RecordApplicationEvents
+@TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 @TestExecutionListeners(
     listeners = DatasetTestExecutionListener.class,
     mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS
