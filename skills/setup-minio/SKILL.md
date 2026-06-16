@@ -1,6 +1,6 @@
 ---
 name: setup-minio
-description: Setup and configure MinIO (S3 compatible storage) for the Nexa project. Use when the user asks to set up MinIO, configure S3 storage, or troubleshoot MinIO connection issues.
+description: Setup and configure MinIO (S3 compatible storage) for local development and Kubernetes. Use when the user asks to set up MinIO, configure S3 storage, or troubleshoot MinIO connection issues.
 ---
 
 # Setup MinIO
@@ -16,7 +16,7 @@ description: Setup and configure MinIO (S3 compatible storage) for the Nexa proj
 ## Configuration
 
 ### Local Development (application-dev.yaml)
-Ensure the following properties are set in src/main/resources/application-dev.yaml:
+Ensure the following properties are set in your application configuration:
 
 ```yaml
 aws:
@@ -29,13 +29,12 @@ aws:
 ```
 
 ### Bucket Initialization
-Buckets are automatically created by the s3-init service in compose.yaml which runs compose/s3/init-minio.sh.
-Default bucket: decade-bucket.
+Buckets can be automatically created via an initialization script (e.g., `init-minio.sh`) run by an `s3-init` service in `docker-compose.yaml`.
 
 ## Implementation Guide
 
 ### Injecting S3 Client
-To use MinIO in your service, inject the S3Client (configured via Spring Cloud AWS or a custom bean):
+Inject the `S3Client` (configured via Spring Cloud AWS or a custom bean) into your service:
 
 ```java
 @Service
@@ -47,17 +46,42 @@ public class DocumentService {
         this.s3Client = s3Client;
         this.bucketName = bucketName;
     }
-    // ... use s3Client.putObject, etc.
 }
+```
+
+## Kubernetes Setup
+
+MinIO can be deployed to Kubernetes using the official Helm chart.
+
+### 1. Add Helm Repository
+```bash
+helm repo add minio https://charts.min.io/
+helm repo update
+```
+
+### 2. Configuration (`k8s/infra/values.yaml`)
+Reference the infrastructure configuration for MinIO settings:
+
+```yaml
+minio:
+  mode: standalone
+  replicas: 1
+  existingSecret: "minio-secrets"
+  buckets:
+    - name: decade-bucket
+      policy: download
+      purge: false
+```
+
+### 3. Deploy Infrastructure
+```bash
+helm install infra ./k8s/infra -f ./k8s/infra/values-local.yaml
 ```
 
 ## Testing with MinIO
 
-### 1. The @ComponentTest Annotation
-The project uses a custom @ComponentTest annotation found in src/test/java/com/decade/nexa/common/ComponentTest.java. This annotation automatically imports Containers.class, which manages the MinIO lifecycle.
-
-### 2. Automatic Lifecycle Management
-In src/test/java/com/decade/nexa/common/Containers.java, the MinIOContainer is defined as a Bean. When you use @ComponentTest, Testcontainers starts MinIO and injects the dynamic properties:
+### 1. Testcontainers Integration
+Use `MinIOContainer` from Testcontainers for integration testing.
 
 ```java
 @Bean
@@ -67,45 +91,31 @@ MinIOContainer minioContainer() {
         .withEnv("MINIO_ROOT_USER", "decadedecade")
         .withEnv("MINIO_ROOT_PASSWORD", "decadedecade");
 }
-
-@Bean
-DynamicPropertyRegistrar awsProperties(MinIOContainer localStack) {
-    return registry -> {
-        registry.add("aws.s3.endpoint", localStack::getS3URL);
-        registry.add("aws.s3.bucket", () -> "test-bucket");
-        registry.add("aws.s3.access.id", localStack::getUserName);
-        registry.add("aws.s3.access.secret", localStack::getPassword);
-    };
-}
 ```
 
-### 3. Writing a Test
-To write a test that requires MinIO, simply annotate your test class with @ComponentTest:
+###  dynamic Property Registration
+Register properties dynamically so the application connects to the Testcontainers instance:
 
 ```java
-@ComponentTest
-class DocumentUploadIntegrationTest {
-
-    @Autowired
-    private S3Client s3Client;
-
-    @Test
-    void shouldUploadFileToMinio() {
-        // The s3Client is already pointing to the Testcontainers MinIO instance
-        // aws.s3.bucket is "test-bucket" by default in tests
-    }
+@Bean
+DynamicPropertyRegistrar awsProperties(MinIOContainer minio) {
+    return registry -> {
+        registry.add("aws.s3.endpoint", minio::getS3URL);
+        registry.add("aws.s3.bucket", () -> "test-bucket");
+        registry.add("aws.s3.access.id", minio::getUserName);
+        registry.add("aws.s3.access.secret", minio::getPassword);
+    };
 }
 ```
 
 ## Common Operations
 
 ### Manual Bucket Creation
-If you need to create a bucket manually:
 ```bash
-docker exec -it nexa-s3-1 mc mb /data/new-bucket
+docker exec -it <minio-container-id> mc mb /data/new-bucket
 ```
 
 ### Accessing Console
-Login to http://localhost:9001 with:
+Login to http://localhost:9001 with default credentials:
 - **Username:** decadedecade
 - **Password:** decadedecade
