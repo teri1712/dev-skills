@@ -7,44 +7,31 @@ description: Setup and configure MinIO (S3 compatible storage) for local develop
 
 ## Quick Start (Docker Compose)
 
-Add the following services to your `compose.yaml` to start LocalStack (configured for S3) or MinIO:
+Add the following services to your `compose.yaml` to start MinIO:
 
 ```yaml
 services:
   s3:
-    image: localstack/localstack:2.3
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     ports:
-      - "4566:4566"
+      - "9000:9000"
+      - "9001:9001"
     environment:
-      SERVICES: s3
-      AWS_DEFAULT_REGION: ap-southeast-1
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./compose/s3:/etc/localstack/init/ready.d
-```
+      MINIO_ROOT_USER: decadedecade
+      MINIO_ROOT_PASSWORD: decadedecade
+    command: server /data --console-address ":9001"
 
-### Bucket Initialization Script
-Create `compose/s3/01-init-s3.sh` (ensure it's executable: `chmod +x`):
-
-```bash
-#!/bin/bash
-set -e
-awslocal s3 mb s3://decade-bucket
-
-# Optional: Set public read policy
-awslocal s3api put-bucket-policy \
-  --bucket decade-bucket \
-  --policy '{
-    "Version": "2012-10-17",
-    "Statement": [
-      {
-        "Effect": "Allow",
-        "Principal": "*",
-        "Action": "s3:GetObject",
-        "Resource": "arn:aws:s3:::decade-bucket/*"
-      }
-    ]
-  }'
+  s3-init:
+    image: minio/mc
+    depends_on:
+      - s3
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set mys3 http://s3:9000 decadedecade decadedecade;
+      /usr/bin/mc mb mys3/decade-bucket;
+      /usr/bin/mc anonymous set download mys3/decade-bucket;
+      exit 0;
+      "
 ```
 
 ## Configuration
@@ -53,13 +40,13 @@ awslocal s3api put-bucket-policy \
 ```yaml
 aws:
   s3:
-    region: ap-southeast-1
+    region: us-east-1 # MinIO default or any valid region
     bucket: decade-bucket
-    endpoint: http://localhost:4566
-    public-endpoint: http://localhost:4566
+    endpoint: http://localhost:9000
+    public-endpoint: http://localhost:9000
     access:
-      id: test
-      secret: test
+      id: decadedecade
+      secret: decadedecade
 ```
 
 ## Java Implementation
@@ -88,7 +75,7 @@ public class S3Config {
             .endpointOverride(URI.create(endpoint))
             .region(Region.of(region))
             .serviceConfiguration(S3Configuration.builder()
-                .pathStyleAccessEnabled(true) // Required for local/minio
+                .pathStyleAccessEnabled(true) // Required for MinIO
                 .build())
             .credentialsProvider(StaticCredentialsProvider.create(
                 AwsBasicCredentials.create(accessId, accessSecret)))
