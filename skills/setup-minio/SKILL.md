@@ -40,7 +40,7 @@ services:
 ```yaml
 aws:
   s3:
-    region: us-east-1 # MinIO default or any valid region
+    region: us-east-1
     bucket: decade-bucket
     endpoint: http://localhost:9000
     public-endpoint: http://localhost:9000
@@ -75,7 +75,7 @@ public class S3Config {
             .endpointOverride(URI.create(endpoint))
             .region(Region.of(region))
             .serviceConfiguration(S3Configuration.builder()
-                .pathStyleAccessEnabled(true) // Required for MinIO
+                .pathStyleAccessEnabled(true)
                 .build())
             .credentialsProvider(StaticCredentialsProvider.create(
                 AwsBasicCredentials.create(accessId, accessSecret)))
@@ -84,18 +84,64 @@ public class S3Config {
 }
 ```
 
-## Kubernetes Setup (Helm)
+## Kubernetes Deployment (Helm)
 
-### Configuration (`k8s/infra/values.yaml`)
+### 1. Add Helm Repository
+```bash
+helm repo add minio https://charts.min.io/
+helm repo update
+```
+
+### 2. Create Credentials Secret
+Create a Kubernetes secret containing the root user and password:
+```bash
+kubectl create secret generic minio-secrets \
+  --from-literal=root-user=decadedecade \
+  --from-literal=root-password=decadedecade
+```
+
+### 3. Configure `values.yaml`
+Reference the secret and define buckets in your Helm chart configuration:
 ```yaml
 minio:
   mode: standalone
   replicas: 1
-  existingSecret: "minio-secrets"
+  existingSecret: "minio-secrets" # Links to the secret created above
+  
+  # Persistence configuration
+  persistence:
+    enabled: true
+    size: 10Gi
+  
+  # Initial bucket creation
   buckets:
     - name: decade-bucket
       policy: download
       purge: false
+  
+  # Ingress for Console (Optional)
+  consoleIngress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - minio-console.local
+```
+
+### 4. Deploy
+```bash
+# If using a standalone chart
+helm install minio minio/minio -f values.yaml
+
+# If part of an infra stack (e.g., k8s/infra)
+helm install infra ./k8s/infra -f ./k8s/infra/values-local.yaml
+```
+
+### 5. Application Connection (In-Cluster)
+When running inside K8s, use the service name as the endpoint:
+```yaml
+aws:
+  s3:
+    endpoint: http://minio.default.svc.cluster.local:9000
 ```
 
 ## Testing (Testcontainers)
