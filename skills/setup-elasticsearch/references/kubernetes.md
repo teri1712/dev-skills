@@ -1,130 +1,64 @@
-# Kubernetes Setup for Elasticsearch
+# Kubernetes Setup for Elasticsearch (Nexa Project Pattern)
 
-This reference document outlines how to deploy Elasticsearch in a Kubernetes (K8s) cluster using both native manifest YAML files and Helm charts.
+This reference outlines the exact production deployment configuration used for Elasticsearch in the Nexa project.
 
-## Method 1: Using Helm (Recommended)
+## 1. Helm Dependency Definition (`k8s/infra/Chart.yaml`)
 
-Helm is the standard and easiest way to deploy Elasticsearch in Kubernetes. The official Elastic Helm charts or the Bitnami charts are widely used.
+The project uses the official Elastic Helm chart for Elasticsearch inside the `infra` chart dependencies:
 
-### Using Bitnami Helm Chart
-The Bitnami chart is popular for standard single-node or clustered deployments.
-
-```bash
-# Add the Bitnami repository
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo update
-
-# Install a single-node Elasticsearch deployment for development/testing
-helm install elasticsearch bitnami/elasticsearch \
-  --set global.security.enabled=false \
-  --set master.replicaCount=1 \
-  --set cooridnation.service.enabled=false \
-  --set data.replicaCount=0 \
-  --set ingest.replicaCount=0
-```
-
-### Using Elastic Official Helm Chart
-```bash
-helm repo add elastic https://helm.elastic.co
-helm repo update
-
-# Install Elasticsearch
-helm install elasticsearch elastic/elasticsearch --version 8.11.1
+```yaml
+dependencies:
+  - name: elasticsearch
+    version: 8.5.1
+    repository: https://helm.elastic.co/
 ```
 
 ---
 
-## Method 2: Kubernetes Manifests (StatefulSet)
+## 2. Infrastructure Configuration (`k8s/infra/values.yaml`)
 
-If you prefer static manifest files without Helm, you can use the following standard single-node StatefulSet configuration.
+The infrastructure configurations are mapped under the `elasticsearch` key in `k8s/infra/values.yaml`:
 
-### 1. Persistent Volume Claim (`elasticsearch-pvc.yaml`)
 ```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: elasticsearch-data
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-```
-
-### 2. Service (`elasticsearch-service.yaml`)
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: elasticsearch
-  labels:
-    app: elasticsearch
-spec:
-  ports:
-    - port: 9200
-      name: http
-    - port: 9300
-      name: transport
-  selector:
-    app: elasticsearch
-  type: ClusterIP
-```
-
-### 3. StatefulSet (`elasticsearch-statefulset.yaml`)
-```yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: elasticsearch
-spec:
-  serviceName: "elasticsearch"
+elasticsearch:
   replicas: 1
-  selector:
-    matchLabels:
-      app: elasticsearch
-  template:
-    metadata:
-      labels:
-        app: elasticsearch
-    spec:
-      securityContext:
-        fsGroup: 1000
-      containers:
-      - name: elasticsearch
-        image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
-        resources:
-          limits:
-            cpu: "1000m"
-            memory: "2Gi"
-          requests:
-            cpu: "100m"
-            memory: "1Gi"
-        ports:
-        - containerPort: 9200
-          name: http
-        - containerPort: 9300
-          name: transport
-        env:
-        - name: discovery.type
-          value: single-node
-        - name: xpack.security.enabled
-          value: "false"
-        - name: ES_JAVA_OPTS
-          value: "-Xms512m -Xmx512m"
-        volumeMounts:
-        - name: elasticsearch-data
-          mountPath: /usr/share/elasticsearch/data
-      initContainers:
-      # Fix virtual memory limit on the K8s node
-      - name: sysctl
-        image: busybox:latest
-        imagePullPolicy: IfNotPresent
-        command: ["sysctl", "-w", "vm.max_map_count=262144"]
-        securityContext:
-          privileged: true
-      volumes:
-      - name: elasticsearch-data
-        persistentVolumeClaim:
-          claimName: elasticsearch-data
+  minimumMasterNodes: 1
+  protocol: https
+  createCert: true
+  secret:
+    enabled: false
+  extraEnvs:
+    - name: ELASTIC_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: nexa-secrets
+          key: elasticsearch-password
+  tests:
+    enabled: false
+  esConfig:
+    elasticsearch.yml: |
+      cluster.routing.allocation.disk.watermark.low: 98%
+      cluster.routing.allocation.disk.watermark.high: 99%
+      cluster.routing.allocation.disk.watermark.flood_stage: 99.5%
+```
+
+- **Authentication**: Secured with HTTPS protocol using auto-created certificates (`createCert: true`).
+- **Passwords**: Extracted from a Kubernetes Secret named `nexa-secrets` under the key `elasticsearch-password`.
+- **Watermarks**: Custom low/high/flood stage watermarks applied inline within `elasticsearch.yml` configuration block to handle disk allocation tolerance.
+
+---
+
+## 3. Application Consumption Config (`k8s/nexa/values.yaml`)
+
+The application deployment reads the connection settings via standard environment variable bindings mapping to properties in `application-prod.yaml`:
+
+```yaml
+env:
+  ELASTICSEARCH_URL: "https://elasticsearch-master:9200"
+  ELASTICSEARCH_USERNAME: "elastic"
+  ELASTICSEARCH_PASSWORD:
+    valueFrom:
+      secretKeyRef:
+        name: nexa-secrets
+        key: elasticsearch-password
 ```

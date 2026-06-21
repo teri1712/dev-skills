@@ -1,68 +1,54 @@
-# Docker Compose Setup for Elasticsearch and Kibana
+# Docker Compose Setup for Elasticsearch (Nexa Project Pattern)
 
-This reference provides a template and instructions for setting up Elasticsearch and Kibana locally for development.
+This reference outlines the exact Elasticsearch service configuration used in this project's local development stack.
 
-## Docker Compose Configuration (`docker-compose-es.yml`)
+## 1. Service Definition in `compose.yaml`
 
-The following YAML outlines a standard single-node Elasticsearch configuration (version 8.x) alongside Kibana with security features temporarily disabled or pre-configured for simple local development.
+The project defines the Elasticsearch service in the root `compose.yaml` file:
 
 ```yaml
-version: '3.8'
-
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
-    container_name: elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
     environment:
-      - node.name=elasticsearch
-      - cluster.name=es-docker-cluster
-      - discovery.type=single-node
-      # Disable security for simple local development (optional, adjust for production)
-      - xpack.security.enabled=false
-      - bootstrap.memory_lock=true
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      network.host: 0.0.0.0
+      cluster.routing.allocation.disk.watermark.low: "98%"
+      cluster.routing.allocation.disk.watermark.high: "99%"
+      cluster.routing.allocation.disk.watermark.flood_stage: "99.5%"
     ports:
       - "9200:9200"
+    cpus: 4
+    mem_limit: 4g
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1" ]
       interval: 10s
       timeout: 5s
-      retries: 5
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.11.1
-    container_name: kibana
-    ports:
-      - "5601:5601"
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-
-volumes:
-  es_data:
-    driver: local
+      retries: 10
+      start_period: 30s
+    restart: always
 ```
 
-## Important Settings
+### Key Configurations Explained
 
-1. **Virtual Memory (`vm.max_map_count`)**:
-   Elasticsearch uses a `mmapfs` directory by default to store its indices. The default operating system limits on mmap counts may be too low, which can result in out-of-memory exceptions.
-   On your Linux host, you must run:
-   ```bash
-   sudo sysctl -w vm.max_map_count=262144
-   ```
-   To make this permanent, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
+- **Image Version**: `8.17.0` (matching the Testcontainers and Production settings).
+- **Security Disabled**: `xpack.security.enabled: "false"` simplifies local development interactions.
+- **Disk Watermarks**: Adjusted watermarks (low: `98%`, high: `99%`, flood: `99.5%`) prevent the cluster from blocking index operations when the local disk space is running relatively low.
+- **Resources**: CPU (`cpus: 4`) and memory limits (`mem_limit: 4g`) bound the host resources utilized by Elasticsearch.
+- **Healthcheck**: Uses `curl` to verify cluster health status periodically.
 
-2. **JVM Heap Size**:
-   Configured via `ES_JAVA_OPTS`. Set `-Xms512m -Xmx512m` (or more, depending on your RAM) to ensure the JVM has enough heap space, but doesn't consume all system memory.
+## 2. Managing the Service
 
-3. **Data Persistence**:
-   A named volume `es_data` is mounted to `/usr/share/elasticsearch/data` to ensure data persists across container restarts and updates.
+To spin up the Elasticsearch instance locally:
+
+```bash
+docker compose up -d elasticsearch
+```
+
+To view the service health and logs:
+
+```bash
+docker compose ps
+docker compose logs -f elasticsearch
+```

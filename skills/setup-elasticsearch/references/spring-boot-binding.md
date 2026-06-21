@@ -1,96 +1,64 @@
-# Connecting Spring Boot to Elasticsearch
+# Connecting Spring Boot to Elasticsearch (Nexa Project Pattern)
 
-This document describes how to configure a Spring Boot application to connect to the Elasticsearch instance.
+This reference outlines the configuration dependencies and application properties used in the Nexa project to connect Spring Boot to Elasticsearch.
 
-## 1. Dependency Management
+## 1. Dependency Management (`pom.xml`)
 
-Add the Spring Data Elasticsearch starter dependency to your `pom.xml`:
+The project uses both Spring Data Elasticsearch and Spring AI Vector Store starters:
 
 ```xml
+<!-- Spring Data Elasticsearch -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-data-elasticsearch</artifactId>
 </dependency>
+
+<!-- Spring AI Vector Store (Elasticsearch) -->
+<dependency>
+    <groupId>org.springframework.ai</groupId>
+    <artifactId>spring-ai-starter-vector-store-elasticsearch</artifactId>
+</dependency>
 ```
 
-Or for Gradle (`build.gradle`):
-
-```groovy
-implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
-```
+---
 
 ## 2. Spring Properties Configuration
 
-In `application.yml` or `application.properties`, configure the connection details:
+The project maps connection configuration parameters conditionally via profiles.
 
-### Development Configuration (Security Disabled)
-If security is disabled (like in our default local Docker Compose setup):
+### Development Configuration (`application-dev.yaml`)
 
 ```yaml
 spring:
   elasticsearch:
     uris: http://localhost:9200
-    connection-timeout: 5s
-    socket-timeout: 30s
 ```
 
-### Production/Secured Configuration
-If security is enabled and you are using username/password and SSL:
+### Production Configuration (`application-prod.yaml`)
 
 ```yaml
 spring:
   elasticsearch:
-    uris: https://elasticsearch.default.svc.cluster.local:9200
-    username: elastic
+    uris: ${ELASTICSEARCH_URL}
+    username: ${ELASTICSEARCH_USERNAME}
     password: ${ELASTICSEARCH_PASSWORD}
-    connection-timeout: 5s
-    socket-timeout: 30s
 ```
 
-## 3. High-Level Rest Client Customization (Optional)
+### Spring AI Vector Store Settings (`application.yaml`)
 
-If you need to bypass SSL certification verification (e.g., self-signed certificates in dev or staging environments), you can configure a custom RestClient bean:
+The vector store configuration is defined universally in `application.yaml`:
 
-```java
-import org.elasticsearch.client.RestClient;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.data.elasticsearch.client.ClientConfiguration;
-import org.springframework.data.elasticsearch.client.elc.ElasticsearchConfiguration;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
-
-@Configuration
-public class ElasticsearchConfig extends ElasticsearchConfiguration {
-
-    @Override
-    public ClientConfiguration clientConfiguration() {
-        // Build trust-all SSL context if needed
-        SSLContext sslContext = createTrustAllSslContext();
-
-        return ClientConfiguration.builder()
-                .connectedTo("localhost:9200")
-                .usingSsl(sslContext) // Apply SSL configuration
-                .withBasicAuth("elastic", "your_password")
-                .build();
-    }
-
-    private SSLContext createTrustAllSslContext() {
-        try {
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, new TrustManager[]{new X509TrustManager() {
-                public X509Certificate[] getAcceptedIssuers() { return null; }
-                public void checkClientTrusted(X509Certificate[] certs, String authType) {}
-                public void checkServerTrusted(X509Certificate[] certs, String authType) {}
-            }}, new SecureRandom());
-            return sslContext;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-}
+```yaml
+spring:
+  ai:
+    vectorstore:
+      elasticsearch:
+        dimensions: 768
+        index-name: nexa-documents
+        initialize-schema: true
+        similarity: cosine
+        embedding-field-name: embedding
 ```
+
+- **index-name**: The documents are written to the `nexa-documents` index.
+- **initialize-schema**: Automatically creates/configures the index maps on application startup.
