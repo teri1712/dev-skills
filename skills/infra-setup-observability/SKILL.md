@@ -185,38 +185,103 @@ tempo:
       requests: { cpu: 500m, memory: 256Mi }
 ```
 
-**Production Configuration (`k8s/observability/values-prod.yaml`):**
+**GKE Production Configuration (`k8s/observability/values-gke.yaml`):**
 ```yaml
-# GKE Production Profile
+# GKE Production Profile - Observability
+# Economical settings to prioritize resources for App and Infra services
 prometheus:
   server:
     persistentVolume:
-      storageClass: "premium-rwo"
+      storageClass: "standard-rwo"
       size: 10Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
 
 grafana:
   persistence:
-    storageClassName: "premium-rwo"
-    size: 5Gi
+    size: 1Gi
+  resources:
+    limits:
+      cpu: 250m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 512Mi
 
 loki:
+  loki:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
   singleBinary:
     persistence:
-      storageClass: "premium-rwo"
-      size: 10Gi
+      storageClass: "standard-rwo"
+      size: 8Gi
 
 tempo:
+  persistence:
+    storageClass: "standard-rwo"
+    size: 8Gi
   tempo:
-    persistence:
-      storageClass: "premium-rwo"
-      size: 10Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
 ```
 
 **Deployment / Release:**
 1. Run `helm dependency update k8s/observability`.
 2. Ensure `chatapp-secrets` exists.
 3. Deploy Local: `helm upgrade --install observability k8s/observability -f k8s/observability/values-local.yaml`
-4. Deploy Prod: `helm upgrade --install observability k8s/observability -f k8s/observability/values-prod.yaml`
+4. Deploy GKE: `helm upgrade --install observability k8s/observability -f k8s/observability/values-gke.yaml`
+
+### 5. Connecting the App to the Observability Stack
+
+For the application and the observability stack to discover and send data to each other, the application needs to point to the correct service endpoints exposed by the Helm release of the observability stack.
+
+#### Port & Endpoints Mapping
+When the observability stack is deployed with the Helm release name `observability` (e.g., in the same namespace):
+- **Loki Push URL**: `http://observability-loki:3100/loki/api/v1/push` (or `http://observability-loki.<namespace>.svc.cluster.local:3100/loki/api/v1/push`)
+- **Tempo OTLP Tracing (HTTP)**: `http://observability-tempo:4318/v1/traces` (or `http://observability-tempo.<namespace>.svc.cluster.local:4318/v1/traces`)
+- **Prometheus Scrape**: Prometheus will scrape metrics from the application if the application has the following annotations on its pod or service:
+  ```yaml
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/actuator/prometheus"
+  prometheus.io/port: "8081"
+  ```
+  Alternatively, configure a `ServiceMonitor` targeting the application's service.
+
+#### Environment Variables Binding
+In the application's Helm values profile or Deployment manifest, bind these service endpoints using environment variables:
+
+```yaml
+env:
+  LOKI_URL: "http://observability-loki:3100/loki/api/v1/push"
+  OTLP_ENDPOINT: "http://observability-tempo:4318/v1/traces"
+```
+
+In the Spring Boot configuration (`application-prod.yml` or `application.yml`):
+```yaml
+loki:
+  url: ${LOKI_URL}
+
+management:
+  otlp:
+    tracing:
+      endpoint: ${OTLP_ENDPOINT}
+```
 
 ## Advanced features
 
