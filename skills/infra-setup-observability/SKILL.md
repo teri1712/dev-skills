@@ -149,6 +149,129 @@ dependencies:
     repository: https://grafana-community.github.io/helm-charts
 ```
 
+**Base Configuration Blueprint (`k8s/observability/values.yaml`):**
+```yaml
+# Blueprint for Observability Stack
+prometheus:
+  prometheus-node-exporter:
+    enabled: false
+  alertmanager:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  kube-state-metrics:
+    enabled: false
+  configmapReload:
+    prometheus:
+      enabled: false
+  server:
+    persistentVolume:
+      enabled: true
+      accessModes: [ "ReadWriteOnce" ]
+      size: "" # Defined in profiles
+    resources: { } # Defined in profiles
+
+grafana:
+  enabled: true
+  admin:
+    existingSecret: "chatapp-secrets"
+    userKey: "admin-user"
+    passwordKey: "admin-password"
+  testFramework:
+    enabled: false
+  initChownData:
+    enabled: false
+  persistence:
+    enabled: true
+    size: "" # Defined in profiles
+  resources: { } # Defined in profiles
+  serviceMonitor:
+    enabled: false
+  grafana.ini:
+    unified_alerting:
+      enabled: false
+    alerting:
+      enabled: false
+  additionalDataSources:
+    - name: Prometheus
+      type: prometheus
+      url: http://observability-prometheus-server
+      access: proxy
+      isDefault: true
+    - name: Loki
+      type: loki
+      url: http://observability-loki:3100
+      access: proxy
+    - name: Tempo
+      type: tempo
+      url: http://observability-tempo:3200
+      access: proxy
+
+loki:
+  deploymentMode: Monolithic
+  test:
+    enabled: false
+  lokiCanary:
+    enabled: false
+  gateway:
+    enabled: false
+  resultsCache:
+    enabled: false
+  chunksCache:
+    enabled: false
+  monitoring:
+    serviceMonitor:
+      enabled: false
+    selfMonitoring:
+      enabled: false
+      grafanaAgent:
+        install: false
+  loki:
+    auth_enabled: false
+    useTestSchema: true
+    commonConfig:
+      replication_factor: 1
+    storage:
+      type: 'filesystem'
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      size: "" # Defined in profiles
+    resources: { } # Defined in profiles
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+  memcached:
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
+  minio:
+    enabled: false
+
+tempo:
+  tempo:
+    persistence:
+      enabled: true
+      size: "" # Defined in profiles
+    resources: { } # Defined in profiles
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: "0.0.0.0:4318"
+          grpc:
+            endpoint: "0.0.0.0:4317"
+  serviceMonitor:
+    enabled: false
+  gateway:
+    enabled: false
+```
+
 **Local Configuration (`k8s/observability/values-local.yaml`):**
 ```yaml
 # Local scaling for Kind cluster
@@ -185,38 +308,103 @@ tempo:
       requests: { cpu: 500m, memory: 256Mi }
 ```
 
-**Production Configuration (`k8s/observability/values-prod.yaml`):**
+**GKE Production Configuration (`k8s/observability/values-gke.yaml`):**
 ```yaml
-# GKE Production Profile
+# GKE Production Profile - Observability
+# Economical settings to prioritize resources for App and Infra services
 prometheus:
   server:
     persistentVolume:
-      storageClass: "premium-rwo"
+      storageClass: "standard-rwo"
       size: 10Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
 
 grafana:
   persistence:
-    storageClassName: "premium-rwo"
-    size: 5Gi
+    size: 1Gi
+  resources:
+    limits:
+      cpu: 250m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 512Mi
 
 loki:
+  loki:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
   singleBinary:
     persistence:
-      storageClass: "premium-rwo"
-      size: 10Gi
+      storageClass: "standard-rwo"
+      size: 8Gi
 
 tempo:
+  persistence:
+    storageClass: "standard-rwo"
+    size: 8Gi
   tempo:
-    persistence:
-      storageClass: "premium-rwo"
-      size: 10Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
 ```
 
 **Deployment / Release:**
 1. Run `helm dependency update k8s/observability`.
 2. Ensure `chatapp-secrets` exists.
 3. Deploy Local: `helm upgrade --install observability k8s/observability -f k8s/observability/values-local.yaml`
-4. Deploy Prod: `helm upgrade --install observability k8s/observability -f k8s/observability/values-prod.yaml`
+4. Deploy GKE: `helm upgrade --install observability k8s/observability -f k8s/observability/values-gke.yaml`
+
+### 5. Connecting the App to the Observability Stack
+
+For the application and the observability stack to discover and send data to each other, the application needs to point to the correct service endpoints exposed by the Helm release of the observability stack.
+
+#### Port & Endpoints Mapping
+When the observability stack is deployed with the Helm release name `observability` (e.g., in the same namespace):
+- **Loki Push URL**: `http://observability-loki:3100/loki/api/v1/push` (or `http://observability-loki.<namespace>.svc.cluster.local:3100/loki/api/v1/push`)
+- **Tempo OTLP Tracing (HTTP)**: `http://observability-tempo:4318/v1/traces` (or `http://observability-tempo.<namespace>.svc.cluster.local:4318/v1/traces`)
+- **Prometheus Scrape**: Prometheus will scrape metrics from the application if the application has the following annotations on its pod or service:
+  ```yaml
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/actuator/prometheus"
+  prometheus.io/port: "8081"
+  ```
+  Alternatively, configure a `ServiceMonitor` targeting the application's service.
+
+#### Environment Variables Binding
+In the application's Helm values profile or Deployment manifest, bind these service endpoints using environment variables:
+
+```yaml
+env:
+  LOKI_URL: "http://observability-loki:3100/loki/api/v1/push"
+  OTLP_ENDPOINT: "http://observability-tempo:4318/v1/traces"
+```
+
+In the Spring Boot configuration (`application-prod.yml` or `application.yml`):
+```yaml
+loki:
+  url: ${LOKI_URL}
+
+management:
+  otlp:
+    tracing:
+      endpoint: ${OTLP_ENDPOINT}
+```
 
 ## Advanced features
 
