@@ -53,11 +53,11 @@ public class DatasetTestExecutionListener extends AbstractTestExecutionListener 
     }
 
     private List<TestDataset> getDatasets(TestContext testContext) {
-        ComponentTest annotation = MergedAnnotations.from(testContext.getTestClass())
+        ComponentTest annotation = MergedAnnotations.from(testContext.getTestClass(), MergedAnnotations.SearchStrategy.TYPE_HIERARCHY)
             .get(ComponentTest.class).synthesize();
         ApplicationContext context = testContext.getApplicationContext();
         return Arrays.stream(annotation.datasets())
-            .map(context::getBean).toList();
+            .map(clazz -> (TestDataset) context.getBean(clazz)).toList();
     }
 }
 ```
@@ -72,6 +72,9 @@ Meta-annotation to bundle everything together.
 @ActiveProfiles("test")
 @Import({Containers.class, DatasetImportSelector.class})
 @AutoConfigureMockMvc
+@EnableScenarios
+@RecordApplicationEvents
+@TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 @TestExecutionListeners(
     listeners = DatasetTestExecutionListener.class,
     mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS
