@@ -12,9 +12,9 @@ This skill provides instructions and real codebase examples for writing integrat
 ## Key Testing Rules
 
 ### 1. Test Setup & Datasets
-- Every integration test class **must** use the `@ComponentTest` annotation: [ComponentTest.java](file:///home/decade/Documents/side-projects/documents/nexa/src/test/java/com/decade/nexa/common/ComponentTest.java).
+- Every integration test class **must** use the `@ComponentTest` annotation (assume it already exists in the project).
 - Pass appropriate dataset classes to the `datasets` parameter of `@ComponentTest` (e.g., `datasets = {FaqDataset.class, OpenAiDataset.class}`).
-- If a dataset for the module under test does not exist, you must create a new implementation of `TestDataset` in the target directory (e.g., `src/test/java/com/decade/nexa/common/TestDataset.java`).
+- If a dataset for the module under test does not exist, you must create a new implementation of `TestDataset` for cleaning up / setting up tests.
   - Example `TestDataset` implementation:
     ```java
     package com.decade.nexa.common;
@@ -46,8 +46,7 @@ This skill provides instructions and real codebase examples for writing integrat
     ```
 
 ### 4. Authentication
-- For endpoints requiring authentication, annotate the test method or test class with the custom JWT user security context annotation:
-  - `@WithJwtUser`: [WithJwtUser.java](file:///home/decade/Documents/side-projects/documents/nexa/src/test/java/com/decade/nexa/common/jwt/WithJwtUser.java).
+- For endpoints requiring authentication, annotate the test method or test class with the custom JWT user security context annotation `@WithJwtUser` (assume it already exists in the project).
 
 ### 5. Coding & Assertion Style
 - Prefer **AssertJ** (`assertThat(...)`) for fluent, human-readable assertions.
@@ -64,7 +63,7 @@ This skill provides instructions and real codebase examples for writing integrat
 
 ### 1. Seeding via Event Publication Example
 
-Based on [FaqControllerTest.java](file:///home/decade/Documents/side-projects/documents/nexa/src/test/java/com/decade/nexa/faq/integration/FaqControllerTest.java):
+Based on `FaqControllerTest.java` in the faq module:
 
 ```java
 package com.decade.nexa.faq.integration;
@@ -149,7 +148,7 @@ public class FaqControllerTest {
 
 ### 2. Endpoint Seeding & JWT Authentication Example
 
-Based on [FileControllerTest.java](file:///home/decade/Documents/side-projects/documents/nexa/src/test/java/com/decade/nexa/files/integration/FileControllerTest.java) and [FileModuleTest.java](file:///home/decade/Documents/side-projects/documents/nexa/src/test/java/com/decade/nexa/files/integration/FileModuleTest.java):
+Based on `FileControllerTest.java` in the files module:
 
 ```java
 package com.decade.nexa.files.integration;
