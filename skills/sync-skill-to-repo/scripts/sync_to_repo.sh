@@ -38,6 +38,15 @@ fi
 
 if [ "$GIT_FLOW" = true ]; then
     BRANCH_NAME="sync-skill-$SKILL_NAME-$(date +%Y%m%d%H%M%S)"
+    echo "Updating target repository $TARGET_REPO..."
+    # Determine the default branch name (main or master)
+    DEFAULT_BRANCH="main"
+    git -C "$TARGET_REPO" show-ref --verify --quiet refs/heads/main || DEFAULT_BRANCH="master"
+    
+    echo "Checking out $DEFAULT_BRANCH and pulling latest..."
+    git -C "$TARGET_REPO" checkout "$DEFAULT_BRANCH"
+    git -C "$TARGET_REPO" pull origin "$DEFAULT_BRANCH"
+    
     echo "Creating new branch in $TARGET_REPO: $BRANCH_NAME"
     git -C "$TARGET_REPO" checkout -b "$BRANCH_NAME"
 fi
