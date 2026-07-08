@@ -35,9 +35,12 @@ if [ -n "$(git -C "$TARGET_REPO" status --porcelain)" ]; then
     echo "Note: run 'git -C \"$TARGET_REPO\" stash pop' afterwards to restore your other in-progress changes."
 fi
 
-echo "Switching to main branch in $TARGET_REPO..."
-git -C "$TARGET_REPO" checkout main
-git -C "$TARGET_REPO" pull origin main
+DEFAULT_BRANCH="main"
+git -C "$TARGET_REPO" show-ref --verify --quiet refs/heads/main || DEFAULT_BRANCH="master"
+
+echo "Switching to $DEFAULT_BRANCH branch in $TARGET_REPO..."
+git -C "$TARGET_REPO" checkout "$DEFAULT_BRANCH"
+git -C "$TARGET_REPO" pull origin "$DEFAULT_BRANCH"
 
 BRANCH_NAME="sync-skill-$SKILL_NAME-$(date +%Y%m%d%H%M%S)"
 echo "Creating new branch in $TARGET_REPO: $BRANCH_NAME"
@@ -52,7 +55,7 @@ git -C "$TARGET_REPO" add "skills/$SKILL_NAME"
 
 if git -C "$TARGET_REPO" diff --cached --quiet; then
     echo "No changes to sync for '$SKILL_NAME' — nothing to commit, skipping push/PR."
-    git -C "$TARGET_REPO" checkout main
+    git -C "$TARGET_REPO" checkout "$DEFAULT_BRANCH"
     git -C "$TARGET_REPO" branch -d "$BRANCH_NAME"
     exit 0
 fi
