@@ -1,25 +1,15 @@
 #!/bin/bash
+set -euo pipefail
 
 # Sync a specific skill from ~/.agents/skills to the dev-skills repo.
-# Handles Git operations (checkout, commit, push, PR) in the target repo.
+# Always runs the full Git workflow (branch, commit, push, PR) in the target repo.
 
 SKILL_NAME=$1
-GIT_FLOW=false
 TARGET_REPO="$HOME/Documents/dev-skills"
-
-# Simple flag parsing
-shift
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --git) GIT_FLOW=true ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
-    esac
-    shift
-done
 
 if [ -z "$SKILL_NAME" ]; then
   echo "Error: No skill name provided."
-  echo "Usage: $0 <skill-name> [--git]"
+  echo "Usage: $0 <skill-name>"
   exit 1
 fi
 
@@ -36,30 +26,50 @@ if [ ! -d "$TARGET_REPO" ]; then
   exit 1
 fi
 
-if [ "$GIT_FLOW" = true ]; then
-    BRANCH_NAME="sync-skill-$SKILL_NAME-$(date +%Y%m%d%H%M%S)"
-    echo "Creating new branch in $TARGET_REPO: $BRANCH_NAME"
-    git -C "$TARGET_REPO" checkout -b "$BRANCH_NAME"
+# Always land on main before branching, even if the working tree is dirty
+# (e.g. unrelated in-progress edits to other skills).
+if [ -n "$(git -C "$TARGET_REPO" status --porcelain)" ]; then
+    STASH_MSG="sync-skill-to-repo autostash $(date +%Y%m%d%H%M%S)"
+    echo "Local changes detected in $TARGET_REPO — stashing them ('$STASH_MSG') before checking out main..."
+    git -C "$TARGET_REPO" stash push -u -m "$STASH_MSG"
+    echo "Note: run 'git -C \"$TARGET_REPO\" stash pop' afterwards to restore your other in-progress changes."
 fi
+
+DEFAULT_BRANCH="main"
+git -C "$TARGET_REPO" show-ref --verify --quiet refs/heads/main || DEFAULT_BRANCH="master"
+
+echo "Switching to $DEFAULT_BRANCH branch in $TARGET_REPO..."
+git -C "$TARGET_REPO" checkout "$DEFAULT_BRANCH"
+git -C "$TARGET_REPO" pull origin "$DEFAULT_BRANCH"
+
+BRANCH_NAME="sync-skill-$SKILL_NAME-$(date +%Y%m%d%H%M%S)"
+echo "Creating new branch in $TARGET_REPO: $BRANCH_NAME"
+git -C "$TARGET_REPO" checkout -b "$BRANCH_NAME"
 
 mkdir -p "$TARGET_REPO/skills"
 
 echo "Syncing '$SKILL_NAME' from global to $TARGET_REPO..."
 rsync -av --delete "$SOURCE_DIR/" "$TARGET_DIR/"
 
-if [ "$GIT_FLOW" = true ]; then
-    echo "Committing and pushing changes in $TARGET_REPO..."
-    git -C "$TARGET_REPO" add "skills/$SKILL_NAME"
-    git -C "$TARGET_REPO" commit -m "feat: sync skill '$SKILL_NAME' from global storage"
-    git -C "$TARGET_REPO" push origin "$BRANCH_NAME"
-    
-    if command -v gh &> /dev/null; then
-        echo "Creating Pull Request for $TARGET_REPO..."
-        # Run gh inside the target repo
-        (cd "$TARGET_REPO" && gh pr create --title "feat: sync skill '$SKILL_NAME'" --body "Synced from ~/.agents/skills/$SKILL_NAME" --head "$BRANCH_NAME")
-    else
-        echo "Warning: 'gh' CLI not found. Please create PR manually."
-    fi
+git -C "$TARGET_REPO" add "skills/$SKILL_NAME"
+
+if git -C "$TARGET_REPO" diff --cached --quiet; then
+    echo "No changes to sync for '$SKILL_NAME' — nothing to commit, skipping push/PR."
+    git -C "$TARGET_REPO" checkout "$DEFAULT_BRANCH"
+    git -C "$TARGET_REPO" branch -d "$BRANCH_NAME"
+    exit 0
 fi
 
-echo "✅ Skill '$SKILL_NAME' synced to $TARGET_DIR"
+echo "Committing and pushing changes in $TARGET_REPO..."
+git -C "$TARGET_REPO" commit -m "feat: sync skill '$SKILL_NAME' from global storage"
+git -C "$TARGET_REPO" push origin "$BRANCH_NAME"
+
+if command -v gh &> /dev/null; then
+    echo "Creating Pull Request for $TARGET_REPO..."
+    # Run gh inside the target repo
+    (cd "$TARGET_REPO" && gh pr create --title "feat: sync skill '$SKILL_NAME'" --body "Synced from ~/.agents/skills/$SKILL_NAME" --head "$BRANCH_NAME")
+else
+    echo "Warning: 'gh' CLI not found. Please create PR manually."
+fi
+
+echo "✅ Skill '$SKILL_NAME' synced to $TARGET_DIR and PR opened from $BRANCH_NAME"
